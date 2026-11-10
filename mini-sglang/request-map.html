@@ -1,0 +1,412 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mini-SGLang 请求地图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: a single reading column with a wide schematic up top; steps under it act as a legend you can click to light the matching wire. */
+:root{
+  --bg:#f3f5f7;
+  --panel:#ffffff;
+  --ink:#16202b;
+  --muted:#5b6876;
+  --line:#cfd6de;
+  --zmq:#0f6f8f;      /* control-plane wires (ZMQ) */
+  --nccl:#b8620b;     /* GPU / NCCL */
+  --hl:#d1365a;       /* highlighted step */
+  --zmq-soft:#e2f0f5;
+  --nccl-soft:#fbeedd;
+  --code-bg:#eaeef2;
+  --f-display:"IBM Plex Sans Condensed","Noto Sans SC",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Noto Sans SC",system-ui,-apple-system,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0f141a;--panel:#161d25;--ink:#e3e9ef;--muted:#93a1b0;--line:#2b3642;
+    --zmq:#4fb6d6;--nccl:#f0a24a;--hl:#ff6f8f;--zmq-soft:#13303b;--nccl-soft:#3a2a16;--code-bg:#1d2630;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f141a;--panel:#161d25;--ink:#e3e9ef;--muted:#93a1b0;--line:#2b3642;
+  --zmq:#4fb6d6;--nccl:#f0a24a;--hl:#ff6f8f;--zmq-soft:#13303b;--nccl-soft:#3a2a16;--code-bg:#1d2630;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.65;
+  padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:2.3rem;font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.5rem;font-weight:600}
+h3{font-size:1.08rem;font-weight:600}
+p{margin:0;max-width:68ch}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+code{background:var(--code-bg);padding:.1em .35em;border-radius:3px}
+.eyebrow{font-family:var(--f-mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header{display:flex;flex-direction:column;gap:12px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:.85rem;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:18px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:.85rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:26px;height:0;border-top:2.5px solid}
+.sw.z{border-color:var(--zmq)}.sw.n{border-color:var(--nccl);border-top-style:dashed}.sw.h{border-color:var(--hl)}
+
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow-x:auto;padding:14px}
+.diagram svg{display:block;width:100%;min-width:860px;height:auto}
+svg text{font-family:var(--f-body);fill:var(--ink)}
+svg .t-title{font-family:var(--f-display);font-weight:600;font-size:15px}
+svg .t-sub{font-size:11.5px;fill:var(--muted)}
+svg .t-mono{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+svg .t-msg{font-family:var(--f-mono);font-size:11px;font-weight:500;fill:var(--zmq)}
+svg .box{fill:var(--panel);stroke:var(--ink);stroke-width:1.3}
+svg .box.gpu{fill:var(--nccl-soft);stroke:var(--nccl)}
+svg .group{fill:none;stroke:var(--muted);stroke-dasharray:4 4;stroke-width:1}
+svg .wire{fill:none;stroke:var(--zmq);stroke-width:2;transition:stroke .2s,stroke-width .2s,opacity .2s}
+svg .wire.nccl{stroke:var(--nccl);stroke-dasharray:6 4}
+svg .badge circle{fill:var(--panel);stroke:var(--zmq);stroke-width:1.6;transition:fill .2s,stroke .2s}
+svg .badge text{font-family:var(--f-mono);font-size:11px;font-weight:600;fill:var(--zmq);text-anchor:middle;dominant-baseline:central}
+svg .badge.nccl circle{stroke:var(--nccl)} svg .badge.nccl text{fill:var(--nccl)}
+svg.focus .wire,svg.focus .badge{opacity:.22}
+svg.focus .on{opacity:1}
+svg .wire.on{stroke:var(--hl);stroke-width:3.2}
+svg .badge.on circle{fill:var(--hl);stroke:var(--hl)} svg .badge.on text{fill:#fff}
+svg .ah{fill:var(--zmq)} svg .ah-n{fill:var(--nccl)} svg .ah-h{fill:var(--hl)}
+
+.steps{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.step{all:unset;cursor:pointer;display:grid;grid-template-columns:30px 1fr;gap:4px 12px;align-items:start;
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;transition:border-color .15s}
+.step:hover{border-color:var(--zmq)}
+.step:focus-visible{outline:2px solid var(--hl);outline-offset:2px}
+.step[aria-pressed="true"]{border-color:var(--hl);box-shadow:inset 3px 0 0 var(--hl)}
+.num{grid-row:span 3;width:26px;height:26px;border-radius:50%;border:1.6px solid var(--zmq);color:var(--zmq);
+  font-family:var(--f-mono);font-size:.78rem;font-weight:600;display:grid;place-items:center}
+.step.nccl .num{border-color:var(--nccl);color:var(--nccl)}
+.step[aria-pressed="true"] .num{background:var(--hl);border-color:var(--hl);color:#fff}
+.step h3{font-size:1rem}
+.step .msg{font-family:var(--f-mono);font-size:.78rem;color:var(--zmq)}
+.step.nccl .msg{color:var(--nccl)}
+.step p{font-size:.88rem;color:var(--muted)}
+.step .where{grid-column:2;font-family:var(--f-mono);font-size:.75rem;color:var(--ink);opacity:.8;word-break:break-all}
+
+.detail{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+.detail[hidden]{display:none}
+.detail ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-width:72ch}
+.detail .hdr{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.card ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:5px}
+
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td.m{font-family:var(--f-mono);font-size:.8rem;white-space:nowrap}
+
+.path{display:flex;flex-direction:column;gap:10px}
+.lesson{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 18px;align-items:start}
+.lesson input{width:18px;height:18px;margin-top:3px;accent-color:var(--zmq);grid-row:span 3}
+.lesson label{font-family:var(--f-display);font-weight:600;font-size:1.02rem;cursor:pointer}
+.lesson .q{font-size:.88rem;color:var(--muted)}
+.lesson .files{font-family:var(--f-mono);font-size:.76rem}
+.lesson.done label{text-decoration:line-through;color:var(--muted)}
+.progress{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">mini-sglang · commit 9a91cfa · python/minisgl</div>
+  <h1>一个请求在 Mini-SGLang 里走过的路</h1>
+  <p>从 <code>POST /v1/chat/completions</code> 到第一个 token 流回浏览器，中间经过 4 类进程、4 种 ZMQ 消息。点下面任意一步，图上对应的线会亮起来，并展开这一步该读的代码。</p>
+  <div class="meta"><span>启动入口 <code>server/launch.py</code></span><span>进程间控制面：ZMQ (ipc://)</span><span>GPU 之间张量：NCCL</span></div>
+</header>
+
+<section>
+  <div class="legend">
+    <span><i class="sw z"></i>ZMQ 控制消息（CPU，pickle 序列化）</span>
+    <span><i class="sw n"></i>NCCL / GPU 计算</span>
+    <span><i class="sw h"></i>当前选中的步骤</span>
+  </div>
+  <div class="diagram">
+  <svg id="map" viewBox="0 0 1000 520" role="img" aria-label="Mini-SGLang 进程与消息流示意图">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="an" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-n" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-h" d="M0,0 L10,5 L0,10 z"/></marker>
+    </defs>
+
+    <!-- process boundaries -->
+    <rect class="group" x="372" y="58" width="226" height="420" rx="8"/>
+    <text class="t-mono" x="384" y="78">默认 --num-tokenizer 0</text>
+    <text class="t-mono" x="384" y="93">→ 同一个进程兼任两职</text>
+
+    <!-- User -->
+    <rect class="box" x="16" y="222" width="106" height="92" rx="6"/>
+    <text class="t-title" x="69" y="258" text-anchor="middle">User</text>
+    <text class="t-sub" x="69" y="278" text-anchor="middle">curl / OpenAI SDK</text>
+
+    <!-- API server -->
+    <rect class="box" x="176" y="176" width="168" height="184" rx="6"/>
+    <text class="t-title" x="192" y="202">API Server</text>
+    <text class="t-sub" x="192" y="221">主进程 · FastAPI + asyncio</text>
+    <text class="t-mono" x="192" y="250">new_user() → uid</text>
+    <text class="t-mono" x="192" y="268">listen() 后台任务</text>
+    <text class="t-mono" x="192" y="286">ack_map[uid] / Event</text>
+    <text class="t-mono" x="192" y="304">wait_for_ack(uid)</text>
+    <text class="t-mono" x="192" y="340">server/api_server.py</text>
+
+    <!-- Tokenizer -->
+    <rect class="box" x="392" y="108" width="186" height="112" rx="6"/>
+    <text class="t-title" x="408" y="134">Tokenizer</text>
+    <text class="t-sub" x="408" y="153">apply_chat_template + encode</text>
+    <text class="t-mono" x="408" y="180">TokenizeManager</text>
+    <text class="t-mono" x="408" y="204">tokenizer/tokenize.py</text>
+
+    <!-- Detokenizer -->
+    <rect class="box" x="392" y="338" width="186" height="120" rx="6"/>
+    <text class="t-title" x="408" y="364">Detokenizer</text>
+    <text class="t-sub" x="408" y="383">增量解码，按 uid 维护状态</text>
+    <text class="t-mono" x="408" y="410">DetokenizeManager</text>
+    <text class="t-mono" x="408" y="440">tokenizer/detokenize.py</text>
+
+    <!-- Scheduler rank 0 -->
+    <rect class="box" x="640" y="110" width="210" height="300" rx="6"/>
+    <text class="t-title" x="656" y="136">Scheduler · TP rank 0</text>
+    <text class="t-sub" x="656" y="155">一个 GPU 一个进程，死循环</text>
+    <text class="t-mono" x="656" y="182">PrefillManager  (pending)</text>
+    <text class="t-mono" x="656" y="200">DecodeManager   (running)</text>
+    <text class="t-mono" x="656" y="218">CacheManager    (radix)</text>
+    <text class="t-mono" x="656" y="236">TableManager    (slots)</text>
+    <rect class="box gpu" x="656" y="260" width="178" height="104" rx="5"/>
+    <text class="t-title" x="670" y="284">Engine</text>
+    <text class="t-mono" x="670" y="304">model.forward / CUDA Graph</text>
+    <text class="t-mono" x="670" y="322">attn backend (fi / fa)</text>
+    <text class="t-mono" x="670" y="340">sampler → next_tokens</text>
+    <text class="t-mono" x="656" y="394">scheduler/scheduler.py</text>
+
+    <!-- Other ranks -->
+    <rect class="box" x="892" y="150" width="96" height="232" rx="6" transform="translate(8,-8)" opacity=".55"/>
+    <rect class="box" x="892" y="150" width="96" height="232" rx="6"/>
+    <text class="t-title" x="904" y="176">Scheduler</text>
+    <text class="t-sub" x="904" y="194">TP rank 1…N-1</text>
+    <rect class="box gpu" x="904" y="260" width="72" height="104" rx="5"/>
+    <text class="t-title" x="940" y="300" text-anchor="middle">Engine</text>
+    <text class="t-mono" x="940" y="320" text-anchor="middle">同样的</text>
+    <text class="t-mono" x="940" y="336" text-anchor="middle">batch</text>
+
+    <!-- wires -->
+    <g data-s="1"><path class="wire" d="M122,250 L176,250" marker-end="url(#a)"/></g>
+    <g data-s="2"><path class="wire" d="M344,210 C362,210 362,164 392,164" marker-end="url(#a)"/></g>
+    <g data-s="3"><path class="wire" d="M578,164 L640,164" marker-end="url(#a)"/></g>
+    <g data-s="4"><path class="wire" d="M850,210 L892,210" marker-end="url(#a)"/></g>
+    <g data-s="5"><path class="wire nccl" d="M834,312 L904,312" marker-end="url(#an)" marker-start="url(#an)"/></g>
+    <g data-s="6"><path class="wire" d="M640,390 C610,390 610,398 578,398" marker-end="url(#a)"/></g>
+    <g data-s="7"><path class="wire" d="M392,420 C360,420 360,330 344,330" marker-end="url(#a)"/></g>
+    <g data-s="8"><path class="wire" d="M176,292 L122,292" marker-end="url(#a)"/></g>
+
+    <!-- message labels -->
+    <text class="t-msg" x="128" y="240">HTTP</text>
+    <text class="t-msg" x="128" y="310">SSE</text>
+    <text class="t-msg" x="262" y="160" text-anchor="middle">TokenizeMsg</text>
+    <text class="t-msg" x="609" y="150" text-anchor="middle">UserMsg</text>
+    <text class="t-msg" x="871" y="200" text-anchor="middle">PUB</text>
+    <text class="t-msg" x="609" y="430" text-anchor="middle">DetokenizeMsg</text>
+    <text class="t-msg" x="262" y="472" text-anchor="middle">UserReply</text>
+    <path d="M262,462 L262,436 L355,436" fill="none" stroke="var(--line)" stroke-width="1"/>
+
+    <!-- badges -->
+    <g class="badge" data-s="1"><circle cx="149" cy="250" r="10"/><text x="149" y="250">1</text></g>
+    <g class="badge" data-s="2"><circle cx="362" cy="187" r="10"/><text x="362" y="187">2</text></g>
+    <g class="badge" data-s="3"><circle cx="609" cy="164" r="10"/><text x="609" y="164">3</text></g>
+    <g class="badge" data-s="4"><circle cx="871" cy="222" r="10"/><text x="871" y="222" dy="0">4</text></g>
+    <g class="badge nccl" data-s="5"><circle cx="869" cy="312" r="10"/><text x="869" y="312">5</text></g>
+    <g class="badge" data-s="6"><circle cx="609" cy="394" r="10"/><text x="609" y="394">6</text></g>
+    <g class="badge" data-s="7"><circle cx="362" cy="375" r="10"/><text x="362" y="375">7</text></g>
+    <g class="badge" data-s="8"><circle cx="149" cy="292" r="10"/><text x="149" y="292">8</text></g>
+
+    <text class="t-mono" x="16" y="506">ZMQ 地址都是 ipc:///tmp/minisgl_*（见 server/args.py）。只有 rank 0 跟 tokenizer 说话；rank 1…N 只从 rank 0 收消息，结果不回传。</text>
+  </svg>
+  </div>
+
+  <div class="steps" id="steps"></div>
+  <div class="detail" id="detail" hidden></div>
+</section>
+
+<section>
+  <div class="eyebrow">心脏</div>
+  <h2>Scheduler 的一次循环（overlap 模式）</h2>
+  <p>第 5 步其实是在一个死循环里反复发生的。默认开启 overlap scheduling：GPU 跑第 N 个 batch 的同时，CPU 处理第 N-1 个 batch 的结果。所以 <code>_process_last_data</code> 处理的是上一轮的输出，这一点很容易读错。</p>
+  <div class="diagram">
+  <svg viewBox="0 0 1000 210" role="img" aria-label="overlap 调度时间线">
+    <text class="t-mono" x="10" y="58">CPU</text>
+    <text class="t-mono" x="10" y="148">GPU</text>
+    <line x1="60" y1="100" x2="990" y2="100" stroke="var(--line)"/>
+    <!-- iteration k -->
+    <rect x="70" y="36" width="110" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="125" y="58" text-anchor="middle" font-size="12">receive_msg</text>
+    <rect x="186" y="36" width="140" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="256" y="58" text-anchor="middle" font-size="12">schedule batch N</text>
+    <rect x="332" y="36" width="96" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="380" y="58" text-anchor="middle" font-size="12">launch N</text>
+    <rect x="434" y="36" width="190" height="36" rx="4" fill="var(--panel)" stroke="var(--hl)" stroke-width="1.6"/>
+    <text x="529" y="58" text-anchor="middle" font-size="12">process results N-1</text>
+    <!-- iteration k+1 -->
+    <rect x="630" y="36" width="96" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="678" y="58" text-anchor="middle" font-size="12">receive_msg</text>
+    <rect x="732" y="36" width="130" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="797" y="58" text-anchor="middle" font-size="12">schedule N+1</text>
+    <rect x="868" y="36" width="110" height="36" rx="4" fill="var(--zmq-soft)" stroke="var(--zmq)"/>
+    <text x="923" y="58" text-anchor="middle" font-size="12">launch N+1</text>
+    <!-- GPU lane -->
+    <rect x="70" y="126" width="300" height="36" rx="4" fill="var(--nccl-soft)" stroke="var(--nccl)"/>
+    <text x="220" y="148" text-anchor="middle" font-size="12">forward batch N-1</text>
+    <rect x="380" y="126" width="540" height="36" rx="4" fill="var(--nccl-soft)" stroke="var(--nccl)"/>
+    <text x="650" y="148" text-anchor="middle" font-size="12">forward batch N（CPU 同时在处理 N-1 的 token）</text>
+    <path d="M380,72 L380,126" stroke="var(--muted)" stroke-dasharray="3 3" fill="none"/>
+    <text class="t-mono" x="10" y="196">engine 在自己的 CUDA stream 上跑；调度用另一个 stream。copy_done.synchronize() 只等 next_tokens 拷回 CPU。</text>
+  </svg>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>调度策略：prefill 优先</h3>
+      <ul>
+        <li><code>_schedule_next_batch</code>：先问 PrefillManager 要 batch，拿不到再问 DecodeManager。一个 batch 要么全是 prefill，要么全是 decode。</li>
+        <li>prefill 受 <code>max_extend_tokens</code> 预算约束，长 prompt 被切成 <code>ChunkedReq</code> 分几轮做完（chunked prefill）。</li>
+        <li>准入时先 <code>match_req</code> 查 radix 树，命中的前缀直接复用 KV，只算 <code>extend_len</code> 部分。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Req 的两个指针</h3>
+      <ul>
+        <li><code>cached_len</code>：KV 已经写进显存的长度。</li>
+        <li><code>device_len</code>：当前 token 总长度。两者之差就是本轮要算的 <code>extend_len</code>。</li>
+        <li>每次 forward 后 <code>complete_one()</code>：<code>cached_len = device_len; device_len += 1</code>。prefill 和 decode 用的是同一套逻辑，decode 就是 extend_len = 1 的 prefill。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">速查</div>
+  <h2>四种消息</h2>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>消息</th><th>方向</th><th>携带内容</th><th>定义</th></tr></thead>
+    <tbody>
+      <tr><td class="m">TokenizeMsg</td><td>API → Tokenizer</td><td>uid、原始 text 或 messages、SamplingParams</td><td class="m">message/tokenizer.py</td></tr>
+      <tr><td class="m">UserMsg</td><td>Tokenizer → Scheduler 0</td><td>uid、input_ids（CPU tensor）、SamplingParams</td><td class="m">message/backend.py</td></tr>
+      <tr><td class="m">DetokenizeMsg</td><td>Scheduler 0 → Detokenizer</td><td>uid、next_token（一个 int）、finished</td><td class="m">message/tokenizer.py</td></tr>
+      <tr><td class="m">UserReply</td><td>Detokenizer → API</td><td>uid、incremental_output（新增的文字）、finished</td><td class="m">message/frontend.py</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:.88rem;color:var(--muted)">每种消息都有对应的 <code>Batch*Msg</code> 包装：一次循环里攒到多条就打包发送，只有一条时直接发原始消息。另外还有 <code>AbortMsg</code>（客户端断开时沿同一条路取消请求）和 <code>ExitMsg</code>。</p>
+</section>
+
+<section>
+  <div class="eyebrow">接下来</div>
+  <h2>从这张图出发的学习路线</h2>
+  <p>按请求路径由外向内读。每一课带一个问题，读完能回答就算过关。勾选状态只保存在你这个浏览器里。</p>
+  <div class="progress" id="progress"></div>
+  <div class="path" id="path"></div>
+</section>
+</div>
+
+<script>
+const STEPS=[
+ {n:1,t:"用户发起请求",msg:"HTTP POST /v1/chat/completions",where:"server/api_server.py:256",
+  sum:"FastAPI 收到请求，分配 uid，建好这个 uid 的回信箱。",
+  pts:["<code>new_user()</code> 自增 uid，并在 <code>ack_map[uid]</code> 和 <code>event_map[uid]</code> 里放一个列表和一个 asyncio.Event。","SamplingParams 在这里组装：temperature、top_k、top_p、max_tokens、ignore_eos。","API Server 是主进程；其他子进程由 <code>launch.py</code> 的 <code>start_subprocess</code> 用 spawn 方式启动，并通过 ack_queue 等它们全部就绪。"]},
+ {n:2,t:"交给 Tokenizer",msg:"TokenizeMsg",where:"server/api_server.py:130  send_one()",
+  sum:"把文本原样推给 tokenizer 进程，API Server 本身不做分词。",
+  pts:["第一次发送时顺便启动 <code>listen()</code> 后台协程，它负责接收所有回信。","用的是 <code>ZmqAsyncPushQueue</code>，PUSH/PULL 模式，单向、无需回复。","分词放在独立进程里，是为了不让 CPU 密集的 tokenize 卡住 asyncio 事件循环。"]},
+ {n:3,t:"分词后送给 Scheduler 0",msg:"UserMsg",where:"tokenizer/server.py:31  tokenize_worker()",
+  sum:"套 chat template、encode 成 input_ids，再推给 rank 0 的 Scheduler。",
+  pts:["同一个 worker 循环里按消息类型分流：TokenizeMsg、DetokenizeMsg、AbortMsg。","默认 <code>num_tokenizer=0</code>，分词和反分词共用一个进程和一个 ZMQ 地址（见 <code>args.py</code> 的 <code>share_tokenizer</code>）。","只有 rank 0 绑定 <code>zmq_backend_addr</code> 接收。"]},
+ {n:4,t:"rank 0 广播给其他 rank",msg:"ZMQ PUB/SUB（原始字节）",where:"scheduler/io.py:88  _recv_msg_multi_rank0()",
+  sum:"多卡时，rank 0 把收到的原始字节原封不动转发给所有 rank，保证每张卡看到同样的请求序列。",
+  pts:["先用 gloo CPU group 广播「这一轮有几条消息」，其他 rank 再按这个数去 SUB 队列里取，这样所有 rank 的调度决策完全一致。","转发的是 raw bytes，省掉一次反序列化再序列化。","单卡时这一步不存在，走 <code>_recv_msg_single_rank</code>。"]},
+ {n:5,t:"调度并在 GPU 上计算",msg:"Batch → Engine.forward_batch",where:"scheduler/scheduler.py:83  overlap_loop()",cls:"nccl",
+  sum:"请求先进 pending 队列，被组成 prefill batch，之后每轮作为 decode batch 生成一个 token。",
+  pts:["<code>_process_one_msg</code> → <code>prefill_manager.add_one_req</code>，请求先排队。","<code>_schedule_next_batch</code> 选出 batch，<code>_prepare_batch</code> 分配 KV 页、算 positions、准备 attention metadata。","<code>engine.forward_batch</code>（engine/engine.py:191）：能用 CUDA Graph 就 replay，否则直接 forward，然后采样。","TP 下每层 Linear 后做 NCCL all-reduce，这是 rank 之间唯一的张量通信。"]},
+ {n:6,t:"把新 token 发给 Detokenizer",msg:"DetokenizeMsg",where:"scheduler/scheduler.py:138  _process_last_data()",
+  sum:"每个请求每轮产出一个 token id，判断是否结束，然后发出去。",
+  pts:["结束条件：达到 max_tokens（<code>!req.can_decode</code>），或者采到 EOS 且没设 ignore_eos。","请求结束就释放 table slot，并把 KV 交给 radix cache（<code>cache_req(finished=True)</code>），留给以后的请求复用前缀。","只有 rank 0 真正发送；<code>_reply_tokenizer_rank1</code> 什么也不做。"]},
+ {n:7,t:"token 变回文字",msg:"UserReply",where:"tokenizer/detokenize.py:70  detokenize()",
+  sum:"按 uid 维护解码状态，只输出新增且可安全打印的文字。",
+  pts:["一个汉字可能由多个 token 组成，半个 UTF-8 字符不能先吐出去，所以要缓存，等能拼成完整字符再输出。","<code>find_printable_text</code> 借自 HF transformers 的 streamer。","输出的是增量文字（incremental_output），不是全文。"]},
+ {n:8,t:"流式返回给用户",msg:"SSE data: …",where:"server/api_server.py:134  wait_for_ack()",
+  sum:"listen() 收到回信，按 uid 放进 ack_map 并 set Event，对应的生成器醒来把文字吐给客户端。",
+  pts:["每个 HTTP 连接一个生成器，等在自己 uid 的 Event 上，这是典型的 asyncio「多路分发」写法。","<code>stream_with_cancellation</code>：客户端断开时发 AbortMsg，沿 2→3 的路径取消请求、释放资源。","非流式请求同样走这条路，只是把所有片段拼好再一次性返回。"]}
+];
+const LESSONS=[
+ {t:"读 docs/structures.md 和 launch.py",q:"一共启动几个进程？它们靠什么确认对方已经就绪？",f:"docs/structures.md · server/launch.py · server/args.py"},
+ {t:"消息与 ZMQ 封装",q:"为什么 rank 0 转发 raw bytes？Batch*Msg 解决什么问题？",f:"message/* · utils/mp.py · scheduler/io.py"},
+ {t:"API Server 的 asyncio 分发",q:"1000 个并发连接时，listen() 和 wait_for_ack() 怎么配合？",f:"server/api_server.py"},
+ {t:"核心数据结构 Req / Batch / Context",q:"cached_len、device_len、extend_len 在 prefill 和 decode 时分别是多少？",f:"core.py"},
+ {t:"Scheduler 主循环与 overlap",q:"为什么 overlap 模式下一个请求可能被 free 两次？代码怎么防？",f:"scheduler/scheduler.py"},
+ {t:"Prefill 准入与 chunked prefill",q:"reserved_size 估算的是什么？什么情况下新请求进不来？",f:"scheduler/prefill.py · scheduler/decode.py"},
+ {t:"KV 页表与 RadixCache",q:"两个请求共享 system prompt 时，第二个请求省掉了哪些计算？",f:"scheduler/cache.py · scheduler/table.py · kvcache/radix_cache.py"},
+ {t:"Engine、Attention backend 与 CUDA Graph",q:"为什么 decode 可以用 CUDA Graph，prefill 不行？pad_batch 在干什么？",f:"engine/engine.py · engine/graph.py · attention/fi.py"},
+ {t:"模型与张量并行",q:"列切分和行切分的 Linear 各在哪儿用？all-reduce 发生在哪几处？",f:"models/llama.py · layers/linear.py · distributed/"}
+];
+
+const map=document.getElementById('map');
+const stepsEl=document.getElementById('steps');
+const detail=document.getElementById('detail');
+let current=null;
+
+STEPS.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='step'+(s.cls?' '+s.cls:'');
+  b.type='button';b.id='step-'+s.n;b.setAttribute('aria-pressed','false');
+  b.innerHTML=`<span class="num">${s.n}</span><h3>${s.t}</h3><span class="msg">${s.msg}</span><p>${s.sum}</p><span class="where">${s.where}</span>`;
+  b.addEventListener('click',()=>select(current===s.n?null:s.n));
+  stepsEl.appendChild(b);
+});
+
+function select(n){
+  current=n;
+  map.classList.toggle('focus',n!==null);
+  map.querySelectorAll('[data-s]').forEach(g=>{
+    const on=+g.dataset.s===n;
+    g.classList.toggle('on',on);
+    const p=g.querySelector('.wire');
+    if(p){p.classList.toggle('on',on);
+      const isN=p.classList.contains('nccl');
+      p.setAttribute('marker-end',on?'url(#ah)':isN?'url(#an)':'url(#a)');
+      if(isN)p.setAttribute('marker-start',on?'url(#ah)':'url(#an)');}
+  });
+  stepsEl.querySelectorAll('.step').forEach(b=>b.setAttribute('aria-pressed',String(b.id==='step-'+n)));
+  if(n===null){detail.hidden=true;return;}
+  const s=STEPS[n-1];
+  detail.innerHTML=`<div class="hdr"><span class="eyebrow">第 ${s.n} 步 · ${s.msg}</span><span class="mono">${s.where}</span></div><h3>${s.t}</h3><ul>${s.pts.map(p=>`<li>${p}</li>`).join('')}</ul>`;
+  detail.hidden=false;
+}
+
+let done={};
+try{done=JSON.parse(localStorage.getItem('minisgl-path')||'{}')}catch(e){}
+const pathEl=document.getElementById('path');
+function renderProgress(){
+  const c=LESSONS.filter((_,i)=>done[i]).length;
+  document.getElementById('progress').textContent=`已完成 ${c} / ${LESSONS.length}`;
+}
+LESSONS.forEach((l,i)=>{
+  const d=document.createElement('div');
+  d.className='lesson'+(done[i]?' done':'');
+  d.innerHTML=`<input type="checkbox" id="lesson-${i}" ${done[i]?'checked':''}><label for="lesson-${i}">第 ${i+1} 课 · ${l.t}</label><span class="q">${l.q}</span><span class="files">${l.f}</span>`;
+  d.querySelector('input').addEventListener('change',e=>{
+    done[i]=e.target.checked;d.classList.toggle('done',e.target.checked);
+    try{localStorage.setItem('minisgl-path',JSON.stringify(done))}catch(_){}
+    renderProgress();
+  });
+  pathEl.appendChild(d);
+});
+renderProgress();
+select(5);
+</script>
