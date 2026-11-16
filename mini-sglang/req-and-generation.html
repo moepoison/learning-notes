@@ -65,7 +65,7 @@ ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-wi
   <div class="chain"><span>Req 的两个指针</span><i>→</i><span>请求结束</span><i>→</i><span>DecodeManager</span><i>→</i><span>模型怎么回答</span><i>→</i><span>token 在哪生成</span><i>→</i><span>Llama 怎么接进来</span></div>
 </header>
 
-<section>
+<section id="s01">
   <h2><span class="n">01</span>Req：用两个数字记住「算到哪了」</h2>
   <div class="tldr"><strong>一句话</strong><span><code>cached_len</code> 是已经算过、KV 存进显存的 token 数；<code>device_len</code> 是目前一共有多少 token。两者之差就是这一轮要算几个。</span></div>
   <div class="tbl"><table>
@@ -104,7 +104,7 @@ def append_host(self, next_token):  # scheduler.py _process_last_data 里调用
   <div class="mine"><span class="eyebrow">我踩过的坑</span><span>把 <code>device_len</code> 和 <code>max_tokens</code> 搞混：<code>device_len</code> 是现在有多少，<code>max_device_len</code> 才和上限有关。<code>complete_one</code> 的第一行执行时 <code>device_len</code> 还没 +1，所以 prefill 后 <code>cached_len</code> 是 10 不是 0。</span></div>
 </section>
 
-<section>
+<section id="s02">
   <h2><span class="n">02</span>请求结束时发生什么</h2>
   <div class="tldr"><strong>一句话</strong><span>归还座位（table slot），把 KV 交给前缀缓存保留着，留给以后开头相同的请求复用，而不是直接丢掉。</span></div>
 <pre><code># scheduler.py  _process_last_data
@@ -141,7 +141,7 @@ table_idx = 2  [ （空闲）                         ]</pre>
   <div class="analogy"><span class="eyebrow">比喻：餐厅桌号</span><span>请求进来分一张桌（table_idx），桌上的单子记着每道菜放在仓库哪个货架（page_table 那一行）。吃完桌子收回，但做好的菜（KV）先留在仓库里，说不定下一位点的一样。</span></div>
 </section>
 
-<section>
+<section id="s03">
   <h2><span class="n">03</span>DecodeManager（读到一半）</h2>
   <div class="tldr"><strong>一句话</strong><span>手里拿着一个 <code>Req</code> 的集合 <code>running_reqs</code>，也就是所有处在 decode 阶段的请求，每轮把它们打包成一个 decode batch。</span></div>
   <ul>
@@ -159,7 +159,7 @@ table_idx = 2  [ （空闲）                         ]</pre>
     <span>5. <code>inflight_tokens</code> 在算什么，给谁用？</span></div>
 </section>
 
-<section>
+<section id="s04">
   <h2><span class="n">04</span>模型是怎么「回答」的</h2>
   <div class="tldr"><strong>一句话</strong><span>模型只会猜下一个字。回答就是让它一个字一个字接着写，每次猜出的字接到末尾，作为下一次的输入（自回归）。</span></div>
   <p>你的问题会先被套上对话模板，变成 <code>&lt;用户&gt;中国的首都是哪？&lt;助手&gt;</code>。模型看到 <code>&lt;助手&gt;</code>，就以助手的身份续写。它不是在回答，而是在续写一段对话。</p>
@@ -178,7 +178,7 @@ table_idx = 2  [ （空闲）                         ]</pre>
   </ul>
 </section>
 
-<section>
+<section id="s05">
   <h2><span class="n">05</span>token 在哪生成：四站</h2>
 <pre>input_ids ─▶ [Transformer 层] ─▶ [LM head：prefill 只取最后位置] ─▶ logits（词表打分）
                                                                       │
@@ -197,7 +197,7 @@ table_idx = 2  [ （空闲）                         ]</pre>
   <p>prefill 送进 10 个 token 却只出 1 个新 token，原因就在第 2 站：只有最后一个位置代表「prompt 之后的下一个字」。</p>
 </section>
 
-<section>
+<section id="s06">
   <h2><span class="n">06</span>Llama 是怎么接进 mini-sglang 的</h2>
   <div class="tldr"><strong>一句话</strong><span>mini-sglang 没用 HuggingFace 的模型代码，而是自己重写了 Llama。只从 HF 拿 <code>config.json</code>、tokenizer 和 <code>.safetensors</code> 权重。</span></div>
   <h3>启动时：搭模型（一次）</h3>

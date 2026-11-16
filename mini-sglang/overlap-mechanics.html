@@ -62,7 +62,7 @@ ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-wi
   <div class="chain"><span>inference_mode</span><i>→</i><span>DISABLE_OVERLAP</span><i>→</i><span>CUDA stream</span><i>→</i><span>wait_stream</span><i>→</i><span>pin_memory</span><i>→</i><span>Event.synchronize</span></div>
 </header>
 
-<section>
+<section id="s01">
   <h2><span class="n">01</span>torch.inference_mode()</h2>
   <div class="tldr"><strong>一句话</strong><span>PyTorch 自带。告诉它「只推理、不反向传播」，于是不记录计算图，更快、更省内存。</span></div>
   <p>平时每次运算 PyTorch 都会记下「结果是怎么算出来的」，留给 <code>.backward()</code> 求梯度。推理用不到这些。</p>
@@ -77,7 +77,7 @@ ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-wi
   <p>两种写法：装饰器 <code>@torch.inference_mode()</code>（<code>run_forever</code>、<code>tokenize_worker</code>）和 <code>with torch.inference_mode():</code>（<code>launch.py</code> 的 <code>_run_scheduler</code>）。<code>run_forever</code> 被包了两层，属于防御性写法，嵌套没问题。</p>
 </section>
 
-<section>
+<section id="s02">
   <h2><span class="n">02</span>DISABLE_OVERLAP_SCHEDULING</h2>
   <div class="tldr"><strong>一句话</strong><span>环境变量开关 <code>MINISGL_DISABLE_OVERLAP_SCHEDULING=1</code>，默认关闭（即默认开启 overlap）。决定用 <code>normal_loop</code> 还是 <code>overlap_loop</code>。</span></div>
   <p>定义在 <code>env.py:69</code>，<code>env.py</code> 会给每个配置项自动加 <code>MINISGL_</code> 前缀去读环境变量。用在 <code>scheduler.py:122</code> 的 <code>run_forever</code>。</p>
@@ -94,7 +94,7 @@ GPU:                [====算 N====][====算 N+1====]
   <div class="q"><span class="eyebrow">待回答</span><span>overlap 模式下，某请求在第 N 批生成了 EOS，但第 N+1 批在处理 N 的结果之前就调度出去了。它会不会被错误放进 N+1 批？代码怎么处理？提示：<code>_process_last_data</code> 里关于 <code>finished_reqs</code> 的注释。</span></div>
 </section>
 
-<section>
+<section id="s03">
   <h2><span class="n">03</span>CUDA stream</h2>
   <div class="tldr"><strong>一句话</strong><span>GPU 的任务队列。同一条 stream 里严格按顺序执行，不同 stream 之间可以同时跑。</span></div>
   <p>先打破一个直觉：在 Python 里写 <code>y = model(x)</code>，CPU 不会等 GPU 算完，只是把 kernel 丢进队列就立刻返回。GPU 调用是「下单」，不是「执行」。</p>
@@ -125,7 +125,7 @@ engine stream:    [===== forward N =====][===== forward N+1 =====]</pre>
   <p>CUDA Graph 录制不能在默认 stream 上进行（<code>engine/graph.py:140</code>）。所以 Engine 自建一条，<code>forward_batch</code> 开头还 <code>assert torch.cuda.current_stream() == self.stream</code>，这就是 scheduler 每次都要 <code>with self.engine_stream_ctx:</code> 的原因。</p>
 </section>
 
-<section>
+<section id="s04">
   <h2><span class="n">04</span>wait_stream</h2>
   <div class="tldr"><strong>一句话</strong><span><code>A.wait_stream(B)</code>：在 A 的队列里插一个依赖，A 后面的任务要等 B「此刻已提交的」任务做完才开始。CPU 不等。</span></div>
   <div class="analogy">
@@ -142,7 +142,7 @@ self._process_last_data(last_data)                # 服务员已经走开，处�
   <div class="q"><span class="eyebrow">待回答</span><span>如果删掉 <code>wait_stream</code> 那一行，可能会出什么错？用厨师的比喻说一句。</span></div>
 </section>
 
-<section>
+<section id="s05">
   <h2><span class="n">05</span>pin_memory</h2>
   <div class="tldr"><strong>一句话</strong><span>分配一块「钉死」在物理内存上的 CPU 内存（锁页内存），GPU 的搬运单元可以直接读，所以 CPU→GPU 拷贝能真正异步。</span></div>
   <p>普通内存（pageable）的物理位置操作系统随时可以挪，甚至换到硬盘。GPU 的 DMA 引擎按物理地址读数据，怕读到中途被挪走，所以 CUDA 会先让 CPU 把数据拷到一块锁定的中转区：</p>
@@ -165,7 +165,7 @@ device_ids.copy_(input_ids[_slice].pin_memory(), non_blocking=True) # 先复制�
   </ul>
 </section>
 
-<section>
+<section id="s06">
   <h2><span class="n">06</span>Event.synchronize：CPU 唯一主动等 GPU 的地方</h2>
   <div class="tldr"><strong>一句话</strong><span>在 stream 里插一个标记，CPU 调用 <code>synchronize()</code> 时停下来，等 GPU 跑到这个标记为止。</span></div>
 <pre><code># engine/engine.py  forward_batch 结尾

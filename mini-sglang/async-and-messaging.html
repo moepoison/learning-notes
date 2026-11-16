@@ -62,7 +62,7 @@ ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-wi
   <div class="chain"><span>ZMQ</span><i>→</i><span>收发室模式</span><i>→</i><span>Event 为什么先 clear</span><i>→</i><span>为什么要 wait</span><i>→</i><span>唤醒链</span><i>→</i><span>async 基础</span></div>
 </header>
 
-<section>
+<section id="s01">
   <h2><span class="n">01</span>ZMQ：进程之间传消息</h2>
   <div class="tldr"><strong>一句话</strong><span>ZeroMQ 是一个消息传递库，跑在 CPU 上，让不同进程互相发消息。跟 GPU 无关。</span></div>
   <p>mini-sglang 的几个进程之间内存不共享，所以消息（<code>TokenizeMsg</code>、<code>UserMsg</code> 等）要序列化成字节，经 ZMQ 发过去。地址形如 <code>ipc:///tmp/minisgl_3</code>，表示同一台机器上的进程间通信。用到两种模式：PUSH/PULL（一对一单向）和 PUB/SUB（rank 0 广播给其他 rank）。</p>
@@ -92,7 +92,7 @@ ZeroMQ:    生产者 ───────────────────�
   <p>mini-sglang 选 ZeroMQ：所有进程在同一台机器；每个 token 都要传一次，延迟敏感；某个进程挂了整个服务就挂了，消息不需要持久化；不用额外部署服务。</p>
 </section>
 
-<section>
+<section id="s02">
   <h2><span class="n">02</span>收发室模式：wait_for_ack</h2>
   <div class="tldr"><strong>一句话</strong><span>一个后台协程从 ZMQ 收所有回信，按 uid 分进各自的信箱并按门铃；每个 HTTP 请求只在自己的门铃上睡觉。</span></div>
   <p>问题：detokenizer 发回的消息全挤在一条通道里，<code>[uid=3 "你"] [uid=7 "Hello"] [uid=3 "好"] …</code>，需要按 uid 分拣给各自的请求。</p>
@@ -127,7 +127,7 @@ del self.event_map[uid]</code></pre>
   </ul>
 </section>
 
-<section>
+<section id="s03">
   <h2><span class="n">03</span>为什么 wait 之后马上 clear</h2>
   <div class="tldr"><strong>一句话</strong><span>Event 只是一盏「有新信」的灯，不装消息。消息在 <code>ack_map</code> 里，关灯不会丢东西。</span></div>
   <p><code>set()</code> 灯亮，<code>clear()</code> 灯灭，<code>wait()</code> 灯亮立刻返回、灯灭就睡。不 clear 的话，下一轮 <code>wait()</code> 会立刻返回，去看空信箱，再立刻返回……变成空转。</p>
@@ -141,7 +141,7 @@ del self.event_map[uid]</code></pre>
   <p>在 asyncio 里两个 <code>await</code> 之间的代码不会被打断，所以这段代码里竞争其实不会发生。但换成 <code>threading.Event</code> 就会真的出 bug，「先清标志、再读数据」是标准写法。</p>
 </section>
 
-<section>
+<section id="s04">
   <h2><span class="n">04</span>为什么要 wait for event</h2>
   <div class="tldr"><strong>一句话</strong><span>没消息时让出控制权睡觉，消息一到就被叫醒。不占 CPU，也没有额外延迟。</span></div>
   <div class="tbl"><table>
@@ -154,7 +154,7 @@ del self.event_map[uid]</code></pre>
   </table></div>
 </section>
 
-<section>
+<section id="s05">
   <h2><span class="n">05</span>唤醒链：set() 是怎么叫醒协程的</h2>
   <div class="tldr"><strong>一句话</strong><span>靠 Future（空白回执）、就绪队列和事件循环。<code>set()</code> 填好回执，等待者被放回就绪队列，等当前协程交出控制权后接着跑。</span></div>
 <pre><code># CPython asyncio.Event 的核心逻辑（简化）
@@ -190,7 +190,7 @@ class Event:
   <p>整条链上没有任何轮询，每一步都是「有事才被叫醒」。</p>
 </section>
 
-<section>
+<section id="s06">
   <h2><span class="n">06</span>async 基础</h2>
   <div class="tldr"><strong>一句话</strong><span>一个线程，谁在等就先放一边去处理别人。适合大部分时间在等待的工作，不适合纯计算。</span></div>
   <div class="analogy"><span class="eyebrow">比喻</span><span>同步 = 每桌一个专属服务员，客人看菜单时干站着；async = 一个服务员管全场，这桌在看菜单就先去下一桌，谁举手再回来。</span></div>

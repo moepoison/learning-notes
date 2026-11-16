@@ -33,18 +33,35 @@ section{display:flex;flex-direction:column;gap:14px}
 .stat b{font-family:var(--f-display);font-size:2rem;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
 .stat span{font-size:.8rem;color:var(--muted)}
 
-.months{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
-.month{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.months{display:flex;flex-direction:column;gap:16px}
+.month{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
 .month header{display:flex;justify-content:space-between;align-items:baseline}
 .month h3{font-size:1rem}
 .month .count{font-family:var(--f-mono);font-size:.8rem;color:var(--accent);font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.dow{font-family:var(--f-mono);font-size:.68rem;color:var(--muted);text-align:center}
-.day{aspect-ratio:1;max-width:100%;border-radius:4px;background:var(--empty);display:grid;place-items:center;
-  font-family:var(--f-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
-.day.on{background:var(--accent);color:#fff;font-weight:600}
-.day.today{outline:2px solid var(--hl);outline-offset:-2px}
-.day.pad{background:transparent}
+.track-wrap{overflow-x:auto;padding-bottom:2px}
+.track{--n:30;position:relative;display:grid;grid-template-columns:repeat(var(--n),minmax(18px,1fr));min-width:calc(var(--n) * 18px)}
+.track::before{content:"";position:absolute;left:calc(50% / var(--n));right:calc(50% / var(--n));top:9px;height:2px;background:var(--line)}
+.tick{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px}
+.dot{width:10px;height:10px;margin-top:5px;border-radius:50%;background:var(--panel);border:2px solid var(--line);box-sizing:border-box}
+.tick.on .dot{width:20px;height:20px;margin-top:0;background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tick.today .dot{border-color:var(--hl)}
+.tick.today.on .dot{box-shadow:0 0 0 3px var(--accent-soft),0 0 0 5px var(--hl)}
+.tick.future .dot{border-style:dashed;opacity:.5}
+.num{font-family:var(--f-mono);font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1}
+.tick.on .num{color:var(--accent);font-weight:600}
+.tick.today .num{color:var(--hl);font-weight:600}
+.tick.wk .num{opacity:.6}
+button.tick{all:unset;position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
+button.tick:hover .dot{transform:scale(1.12)}
+button.tick:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.dot{transition:transform .15s}
+.tick.sel .dot{box-shadow:0 0 0 3px var(--accent-soft),0 0 0 5px var(--accent)}
+.entry{scroll-margin-top:24px;border-radius:6px;transition:background .3s}
+.entry.flash{background:var(--accent-soft)}
+.notes a{transition:border-color .3s,background .3s}
+.notes a.flash{border-color:var(--accent);background:var(--accent-soft)}
+.hint{font-size:.82rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 .log{display:flex;flex-direction:column}
 .entry{display:grid;grid-template-columns:96px 1fr;gap:4px 16px;padding:12px 0;border-top:1px solid var(--line)}
@@ -71,6 +88,7 @@ section{display:flex;flex-direction:column;gap:14px}
   <section>
     <div class="stats" id="stats"></div>
     <div class="months" id="months"></div>
+    <p class="hint">点蓝色的日子，高亮那天学过的笔记。</p>
   </section>
 
   <section>
@@ -93,12 +111,28 @@ const LOG = [
   {date:"2026-11-12", items:["pin_memory、Event.synchronize，整理 Overlap 笔记","Req 练习表：cached_len / device_len / extend_len","请求结束：释放座位、KV 进 radix 树，table_idx 是什么","dataclass、__post_init__、Python 3.10 语法"]},
   {date:"2026-11-15", items:["API server：wait_for_ack、ZMQ vs RabbitMQ、asyncio 唤醒链、async 基础","开始用费曼学习法；DecodeManager、remain_len","模型怎么回答（自回归）、token 生成四站、Llama 怎么接进 mini-sglang"]},
 ];
+/* 一篇笔记可以覆盖好几天：parts 记录「哪天学的 → 笔记里哪一节」 */
 const NOTES = [
-  {date:"2026-11-09", href:"mini-sglang/request-map.html", title:"一个请求在 Mini-SGLang 里走过的路", sub:"交互式请求流程图 + 9 课学习路线"},
-  {date:"2026-11-12", href:"mini-sglang/overlap-mechanics.html", title:"Overlap 的底层机制", sub:"inference_mode · CUDA stream · wait_stream · pin_memory · Event"},
-  {date:"2026-11-15", href:"mini-sglang/async-and-messaging.html", title:"API Server 的异步与消息", sub:"ZMQ vs RabbitMQ · 收发室模式 · asyncio 唤醒链 · async 基础"},
-  {date:"2026-11-15", href:"mini-sglang/req-and-generation.html", title:"从 Req 到下一个 token", sub:"Req 练习表 · 请求结束 · DecodeManager · 生成链 · Llama 怎么接进来"},
+  {href:"mini-sglang/request-map.html", title:"一个请求在 Mini-SGLang 里走过的路", sub:"交互式请求流程图 + 9 课学习路线",
+   parts:[{date:"2026-11-09", anchor:"", label:"全文"}]},
+  {href:"mini-sglang/overlap-mechanics.html", title:"Overlap 的底层机制", sub:"inference_mode · CUDA stream · wait_stream · pin_memory · Event",
+   parts:[{date:"2026-11-10", anchor:"#s01", label:"inference_mode"},
+          {date:"2026-11-10", anchor:"#s02", label:"DISABLE_OVERLAP"},
+          {date:"2026-11-11", anchor:"#s03", label:"CUDA stream"},
+          {date:"2026-11-11", anchor:"#s04", label:"wait_stream"},
+          {date:"2026-11-12", anchor:"#s05", label:"pin_memory"},
+          {date:"2026-11-12", anchor:"#s06", label:"Event.synchronize"}]},
+  {href:"mini-sglang/req-and-generation.html", title:"从 Req 到下一个 token", sub:"Req 练习表 · 请求结束 · DecodeManager · 生成链 · Llama 怎么接进来",
+   parts:[{date:"2026-11-12", anchor:"#s01", label:"Req 练习表"},
+          {date:"2026-11-12", anchor:"#s02", label:"请求结束、table_idx"},
+          {date:"2026-11-15", anchor:"#s03", label:"DecodeManager"},
+          {date:"2026-11-15", anchor:"#s04", label:"模型怎么回答"},
+          {date:"2026-11-15", anchor:"#s05", label:"token 生成四站"},
+          {date:"2026-11-15", anchor:"#s06", label:"Llama 怎么接进来"}]},
+  {href:"mini-sglang/async-and-messaging.html", title:"API Server 的异步与消息", sub:"ZMQ vs RabbitMQ · 收发室模式 · asyncio 唤醒链 · async 基础",
+   parts:[{date:"2026-11-15", anchor:"", label:"全文"}]},
 ];
+const noteDates = n => [...new Set(n.parts.map(p => p.date))].sort();
 
 const pad = n => String(n).padStart(2,"0");
 const key = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -129,26 +163,56 @@ for (let y = today.getFullYear(), m = today.getMonth(); ; ) {
 }
 document.getElementById("months").innerHTML = months.map(([y,m]) => {
   const days = new Date(y, m+1, 0).getDate();
-  const lead = (new Date(y, m, 1).getDay() + 6) % 7;   // Monday first
   const prefix = `${y}-${pad(m+1)}`;
   const count = [...studied].filter(d => d.startsWith(prefix)).length;
-  let cells = ["一","二","三","四","五","六","日"].map(d => `<div class="dow">${d}</div>`).join("");
-  cells += '<div class="day pad"></div>'.repeat(lead);
+  let ticks = "";
   for (let d = 1; d <= days; d++) {
     const k = `${prefix}-${pad(d)}`;
-    const cls = ["day", studied.has(k) ? "on" : "", k === todayKey ? "today" : ""].join(" ");
-    cells += `<div class="${cls}" title="${k}${studied.has(k) ? " · 已打卡" : ""}">${d}</div>`;
+    const dow = new Date(y, m, d).getDay();
+    const cls = ["tick",
+      studied.has(k) ? "on" : "",
+      k === todayKey ? "today" : "",
+      k > todayKey ? "future" : "",
+      dow === 0 || dow === 6 ? "wk" : ""].join(" ");
+    ticks += studied.has(k)
+      ? `<button type="button" class="${cls}" data-date="${k}" title="${k} · 已打卡，点击查看"><span class="dot"></span><span class="num">${d}</span></button>`
+      : `<div class="${cls}" title="${k}"><span class="dot"></span><span class="num">${d}</span></div>`;
   }
-  return `<div class="month"><header><h3>${y} 年 ${m+1} 月</h3><span class="count">${count} / ${days} 天</span></header><div class="grid">${cells}</div></div>`;
+  return `<div class="month"><header><h3>${y} 年 ${m+1} 月</h3><span class="count">${count} / ${days} 天</span></header><div class="track-wrap"><div class="track" style="--n:${days}">${ticks}</div></div></div>`;
 }).join("");
 
 /* log, newest first */
-document.getElementById("log").innerHTML = [...LOG].reverse().map(e =>
-  `<div class="entry"><time>${e.date}</time><ul>${e.items.map(i => `<li>${i}</li>`).join("")}</ul></div>`).join("");
+document.getElementById("log").innerHTML = [...LOG].reverse().map(e => {
+  return `<div class="entry" id="d-${e.date}"><time>${e.date}</time><ul>${e.items.map(i => `<li>${i}</li>`).join("")}</ul></div>`;
+}).join("");
 
 /* notes, newest first */
-document.getElementById("notes").innerHTML = [...NOTES].reverse().map(n =>
-  `<li><a href="${n.href}"><span class="t">${n.title}</span><time>${n.date}</time><small>${n.sub}</small></a></li>`).join("");
+document.getElementById("notes").innerHTML = [...NOTES]
+  .sort((a, b) => noteDates(b).at(-1).localeCompare(noteDates(a).at(-1)))
+  .map(n => {
+    const ds = noteDates(n);
+    const range = ds.length > 1 ? `${ds[0].slice(5)} – ${ds.at(-1).slice(5)}` : ds[0].slice(5);
+    return `<li><a href="${n.href}" data-dates="${ds.join(" ")}"><span class="t">${n.title}</span><time>${range}</time><small>${n.sub}</small></a></li>`;
+  }).join("");
+
+/* click a studied day → jump to that day's log and highlight it and its notes */
+function focusDay(date, scroll = true) {
+  document.querySelectorAll(".tick.sel").forEach(t => t.classList.remove("sel"));
+  document.querySelectorAll(".entry.flash, .notes a.flash").forEach(el => el.classList.remove("flash"));
+  document.querySelectorAll(`.tick[data-date="${date}"]`).forEach(t => t.classList.add("sel"));
+  const hits = [...document.querySelectorAll(`.notes a[data-dates~="${date}"]`)];
+  hits.forEach(a => a.classList.add("flash"));
+  const entry = document.getElementById("d-" + date);
+  if (entry) entry.classList.add("flash");
+  const target = hits[0] || entry;     // 优先跳到当天的笔记；那天没笔记就跳到日志
+  if (scroll && target) target.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center"});
+  history.replaceState(null, "", "#d-" + date);
+}
+document.getElementById("months").addEventListener("click", e => {
+  const t = e.target.closest("button.tick");
+  if (t) focusDay(t.dataset.date);
+});
+if (location.hash.startsWith("#d-")) focusDay(location.hash.slice(3), false);
 </script>
 </body>
 </html>
