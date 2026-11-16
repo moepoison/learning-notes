@@ -2,32 +2,153 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Learning Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
 <style>
-:root{--bg:#f3f5f7;--panel:#fff;--ink:#16202b;--muted:#5b6876;--line:#cfd6de;--accent:#0f6f8f}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f141a;--panel:#161d25;--ink:#e3e9ef;--muted:#93a1b0;--line:#2b3642;--accent:#4fb6d6}}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 -apple-system,"PingFang SC","Noto Sans SC",system-ui,sans-serif;padding:48px 16px}
-main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
-h1{margin:0;font-size:2rem}
-h2{margin:0 0 10px;font-size:1.2rem}
-ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-a{display:block;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 16px;color:var(--ink);text-decoration:none}
-a:hover{border-color:var(--accent)}
-small{display:block;color:var(--muted)}
+/* Layout: check-in calendar first (the thing to glance at), then the dated study log, then notes grouped by topic. */
+:root{
+  --bg:#f3f5f7;--panel:#ffffff;--ink:#16202b;--muted:#5b6876;--line:#cfd6de;
+  --accent:#0f6f8f;--accent-soft:#e2f0f5;--accent-2:#7cc0d6;--empty:#e8ecf0;--hl:#d1365a;
+  --f-display:"IBM Plex Sans Condensed","Noto Sans SC",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Noto Sans SC",system-ui,-apple-system,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --bg:#0f141a;--panel:#161d25;--ink:#e3e9ef;--muted:#93a1b0;--line:#2b3642;
+  --accent:#4fb6d6;--accent-soft:#13303b;--accent-2:#2a6f86;--empty:#1d2630;--hl:#ff6f8f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.65;
+  padding-block:44px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--f-display);margin:0;line-height:1.2;text-wrap:balance}
+h1{font-size:2.2rem;font-weight:700}
+h2{font-size:1.3rem;font-weight:600}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-family:var(--f-mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+.stats{display:flex;flex-wrap:wrap;gap:10px 28px}
+.stat{display:flex;flex-direction:column}
+.stat b{font-family:var(--f-display);font-size:2rem;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+
+.months{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.month{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.month header{display:flex;justify-content:space-between;align-items:baseline}
+.month h3{font-size:1rem}
+.month .count{font-family:var(--f-mono);font-size:.8rem;color:var(--accent);font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.dow{font-family:var(--f-mono);font-size:.68rem;color:var(--muted);text-align:center}
+.day{aspect-ratio:1;max-width:100%;border-radius:4px;background:var(--empty);display:grid;place-items:center;
+  font-family:var(--f-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.day.on{background:var(--accent);color:#fff;font-weight:600}
+.day.today{outline:2px solid var(--hl);outline-offset:-2px}
+.day.pad{background:transparent}
+
+.log{display:flex;flex-direction:column}
+.entry{display:grid;grid-template-columns:96px 1fr;gap:4px 16px;padding:12px 0;border-top:1px solid var(--line)}
+.entry:last-child{border-bottom:1px solid var(--line)}
+.entry time{font-family:var(--f-mono);font-size:.82rem;color:var(--accent);font-variant-numeric:tabular-nums;padding-top:2px}
+.entry ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:2px;font-size:.92rem}
+@media (max-width:480px){.entry{grid-template-columns:1fr}}
+
+.notes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.notes a{display:grid;grid-template-columns:1fr auto;gap:2px 12px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 16px;color:var(--ink);text-decoration:none}
+.notes a:hover,.notes a:focus-visible{border-color:var(--accent);outline:none}
+.notes .t{font-weight:600}
+.notes time{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;align-self:center}
+.notes small{grid-column:1/-1;color:var(--muted);font-size:.85rem}
 </style>
 </head>
 <body>
 <main>
-  <h1>Learning Notes</h1>
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <div class="eyebrow">moepoison · 学习打卡</div>
+    <h1>Learning Notes</h1>
+  </header>
+
+  <section>
+    <div class="stats" id="stats"></div>
+    <div class="months" id="months"></div>
+  </section>
+
+  <section>
+    <h2>学习日志</h2>
+    <div class="log" id="log"></div>
+  </section>
+
   <section>
     <h2>mini-sglang</h2>
-    <ul>
-      <li><a href="mini-sglang/request-map.html">一个请求在 Mini-SGLang 里走过的路<small>交互式请求流程图 + 9 课学习路线</small></a></li>
-      <li><a href="mini-sglang/overlap-mechanics.html">Overlap 的底层机制<small>inference_mode · CUDA stream · wait_stream · pin_memory · Event</small></a></li>
-      <li><a href="mini-sglang/async-and-messaging.html">API Server 的异步与消息<small>ZMQ vs RabbitMQ · 收发室模式 · asyncio 唤醒链 · async 基础</small></a></li>
-    </ul>
+    <ul class="notes" id="notes"></ul>
   </section>
 </main>
+
+<script>
+/* ===== 打卡数据：每学一天加一条 ===== */
+const LOG = [
+  {date:"2026-11-09", items:["克隆 mini-sglang，读请求链路","画出请求流程图，建好 learning-notes repo 和 GitHub Pages"]},
+  {date:"2026-11-10", items:["开始读 scheduler：Req、normal_loop","torch.inference_mode、DISABLE_OVERLAP_SCHEDULING"]},
+  {date:"2026-11-11", items:["CUDA stream：scheduler stream vs engine stream","wait_stream（厨房比喻）"]},
+  {date:"2026-11-12", items:["pin_memory、Event.synchronize，整理 Overlap 笔记","Req 练习表：cached_len / device_len / extend_len","请求结束：释放座位、KV 进 radix 树，table_idx 是什么","dataclass、__post_init__、Python 3.10 语法"]},
+  {date:"2026-11-15", items:["API server：wait_for_ack、ZMQ vs RabbitMQ、asyncio 唤醒链、async 基础","开始用费曼学习法；DecodeManager、remain_len","模型怎么回答（自回归）、token 生成四站、Llama 怎么接进 mini-sglang"]},
+];
+const NOTES = [
+  {date:"2026-11-09", href:"mini-sglang/request-map.html", title:"一个请求在 Mini-SGLang 里走过的路", sub:"交互式请求流程图 + 9 课学习路线"},
+  {date:"2026-11-12", href:"mini-sglang/overlap-mechanics.html", title:"Overlap 的底层机制", sub:"inference_mode · CUDA stream · wait_stream · pin_memory · Event"},
+  {date:"2026-11-15", href:"mini-sglang/async-and-messaging.html", title:"API Server 的异步与消息", sub:"ZMQ vs RabbitMQ · 收发室模式 · asyncio 唤醒链 · async 基础"},
+  {date:"2026-11-15", href:"mini-sglang/req-and-generation.html", title:"从 Req 到下一个 token", sub:"Req 练习表 · 请求结束 · DecodeManager · 生成链 · Llama 怎么接进来"},
+];
+
+const pad = n => String(n).padStart(2,"0");
+const key = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const studied = new Set(LOG.map(e => e.date));
+const today = new Date();
+const todayKey = key(today);
+
+/* stats */
+const thisMonth = todayKey.slice(0,7);
+const monthCount = [...studied].filter(d => d.startsWith(thisMonth)).length;
+let streak = 0;
+{ const d = new Date(today); if (!studied.has(key(d))) d.setDate(d.getDate()-1);
+  while (studied.has(key(d))) { streak++; d.setDate(d.getDate()-1); } }
+document.getElementById("stats").innerHTML = [
+  [monthCount, `本月学习天数（${today.getMonth()+1} 月）`],
+  [studied.size, "累计学习天数"],
+  [streak, "当前连续天数"],
+  [NOTES.length, "笔记篇数"],
+].map(([n,l]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join("");
+
+/* calendars: every month from the first log entry to the current month, newest first */
+const first = new Date(LOG[0].date + "T00:00:00");
+const months = [];
+for (let y = today.getFullYear(), m = today.getMonth(); ; ) {
+  months.push([y,m]);
+  if (y === first.getFullYear() && m === first.getMonth()) break;
+  m--; if (m < 0) { m = 11; y--; }
+}
+document.getElementById("months").innerHTML = months.map(([y,m]) => {
+  const days = new Date(y, m+1, 0).getDate();
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7;   // Monday first
+  const prefix = `${y}-${pad(m+1)}`;
+  const count = [...studied].filter(d => d.startsWith(prefix)).length;
+  let cells = ["一","二","三","四","五","六","日"].map(d => `<div class="dow">${d}</div>`).join("");
+  cells += '<div class="day pad"></div>'.repeat(lead);
+  for (let d = 1; d <= days; d++) {
+    const k = `${prefix}-${pad(d)}`;
+    const cls = ["day", studied.has(k) ? "on" : "", k === todayKey ? "today" : ""].join(" ");
+    cells += `<div class="${cls}" title="${k}${studied.has(k) ? " · 已打卡" : ""}">${d}</div>`;
+  }
+  return `<div class="month"><header><h3>${y} 年 ${m+1} 月</h3><span class="count">${count} / ${days} 天</span></header><div class="grid">${cells}</div></div>`;
+}).join("");
+
+/* log, newest first */
+document.getElementById("log").innerHTML = [...LOG].reverse().map(e =>
+  `<div class="entry"><time>${e.date}</time><ul>${e.items.map(i => `<li>${i}</li>`).join("")}</ul></div>`).join("");
+
+/* notes, newest first */
+document.getElementById("notes").innerHTML = [...NOTES].reverse().map(n =>
+  `<li><a href="${n.href}"><span class="t">${n.title}</span><time>${n.date}</time><small>${n.sub}</small></a></li>`).join("");
+</script>
 </body>
 </html>

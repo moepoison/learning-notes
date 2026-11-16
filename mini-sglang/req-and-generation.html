@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>从 Req 到下一个 token</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: same reading column as the other mini-sglang notes; sections follow one request from creation, through finishing, then zoom into how the model produces each token. */
+:root{
+  --bg:#f3f5f7;--panel:#ffffff;--ink:#16202b;--muted:#5b6876;--line:#cfd6de;
+  --zmq:#0f6f8f;--nccl:#b8620b;--hl:#d1365a;--code-bg:#eaeef2;--zmq-soft:#e2f0f5;--nccl-soft:#fbeedd;
+  --f-display:"IBM Plex Sans Condensed","Noto Sans SC",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Noto Sans SC",system-ui,-apple-system,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --bg:#0f141a;--panel:#161d25;--ink:#e3e9ef;--muted:#93a1b0;--line:#2b3642;
+  --zmq:#4fb6d6;--nccl:#f0a24a;--hl:#ff6f8f;--code-bg:#1d2630;--zmq-soft:#13303b;--nccl-soft:#3a2a16}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7;
+  padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:48px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.25}
+h1{font-size:2.2rem;font-weight:700}
+h2{font-size:1.45rem;font-weight:600;display:flex;gap:12px;align-items:baseline}
+h2 .n{font-family:var(--f-mono);font-size:.85rem;color:var(--zmq);font-weight:600}
+h3{font-size:1.05rem;font-weight:600}
+p{margin:0;max-width:68ch}
+a{color:var(--zmq)}
+code{font-family:var(--f-mono);font-size:.85em;background:var(--code-bg);padding:.1em .35em;border-radius:3px}
+pre{margin:0;font-family:var(--f-mono);font-size:.8rem;line-height:1.55;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit}
+.eyebrow{font-family:var(--f-mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header,section{display:flex;flex-direction:column;gap:14px}
+.back{font-size:.88rem}
+.tldr{background:var(--zmq-soft);border-radius:6px;padding:14px 18px;display:flex;flex-direction:column;gap:6px}
+.tldr strong{font-family:var(--f-display)}
+.analogy{border-left:3px solid var(--nccl);background:var(--nccl-soft);padding:12px 16px;border-radius:0 6px 6px 0;display:flex;flex-direction:column;gap:6px}
+.analogy .eyebrow{color:var(--nccl)}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td.hi{color:var(--hl);font-weight:600}
+ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-width:70ch}
+.q{background:var(--panel);border:1px dashed var(--hl);border-radius:6px;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.q .eyebrow{color:var(--hl)}
+.mine{border-left:3px solid var(--zmq);background:var(--panel);padding:12px 16px;border-radius:0 6px 6px 0;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.mine .eyebrow{color:var(--zmq)}
+.chain{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--f-mono);font-size:.82rem}
+.chain span{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 10px}
+.chain i{color:var(--muted);font-style:normal}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <a class="back" href="../index.html">← Learning Notes</a>
+  <div class="eyebrow">mini-sglang · scheduler + model 笔记 · 2026-11-15</div>
+  <h1>从 Req 到下一个 token</h1>
+  <p>跟着一个请求走完一生：它的状态怎么用两个数字表示，结束时释放了什么，DecodeManager 怎么接手它；再往下钻一层，看模型到底是怎么生成每一个 token 的，以及 Llama 是怎么接进 mini-sglang 的。</p>
+  <div class="chain"><span>Req 的两个指针</span><i>→</i><span>请求结束</span><i>→</i><span>DecodeManager</span><i>→</i><span>模型怎么回答</span><i>→</i><span>token 在哪生成</span><i>→</i><span>Llama 怎么接进来</span></div>
+</header>
+
+<section>
+  <h2><span class="n">01</span>Req：用两个数字记住「算到哪了」</h2>
+  <div class="tldr"><strong>一句话</strong><span><code>cached_len</code> 是已经算过、KV 存进显存的 token 数；<code>device_len</code> 是目前一共有多少 token。两者之差就是这一轮要算几个。</span></div>
+  <div class="tbl"><table>
+    <thead><tr><th>字段</th><th>意思</th><th>会变吗</th></tr></thead>
+    <tbody>
+      <tr><td><code>cached_len</code></td><td>已有 KV 缓存的 token 数</td><td>每轮更新</td></tr>
+      <tr><td><code>device_len</code></td><td>现在一共有多少 token（prompt + 已生成）</td><td>每轮 +1</td></tr>
+      <tr><td><code>max_device_len</code></td><td>最多能有多少 = prompt 长度 + <code>max_tokens</code></td><td>固定</td></tr>
+      <tr><td><code>extend_len</code></td><td><code>device_len − cached_len</code>，这一轮送进模型几个</td><td>派生</td></tr>
+      <tr><td><code>remain_len</code></td><td><code>max_device_len − device_len</code>，还剩几个空位</td><td>派生</td></tr>
+      <tr><td><code>can_decode</code></td><td><code>remain_len > 0</code>，还能不能再生成</td><td>派生</td></tr>
+    </tbody>
+  </table></div>
+  <p>每次 forward 后两个函数依次执行：</p>
+<pre><code>def complete_one(self):             # engine/engine.py forward_batch 里调用
+    self.cached_len = self.device_len   # 这一轮送进去的都有缓存了（先执行！）
+    self.device_len += 1                # 模型新生成了 1 个 token
+
+def append_host(self, next_token):  # scheduler.py _process_last_data 里调用
+    self.input_ids = torch.cat([self.input_ids, next_token])</code></pre>
+  <h3>练习：prompt 10 个 token，max_tokens=3，前缀缓存未命中</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>时刻</th><th>cached_len</th><th>device_len</th><th>extend_len</th><th>len(input_ids)</th><th>remain_len</th><th>can_decode</th><th>刚做完的这一轮</th></tr></thead>
+    <tbody>
+      <tr><td>刚创建 Req</td><td>0</td><td>10</td><td>10</td><td>10</td><td>3</td><td>True</td><td>—</td></tr>
+      <tr><td>第 1 次 forward 后</td><td>10</td><td>11</td><td>1</td><td>11</td><td>2</td><td>True</td><td>prefill</td></tr>
+      <tr><td>第 2 次 forward 后</td><td>11</td><td>12</td><td>1</td><td>12</td><td>1</td><td>True</td><td>decode</td></tr>
+      <tr><td>第 3 次 forward 后</td><td>12</td><td>13</td><td>1</td><td>13</td><td>0</td><td class="hi">False</td><td>decode</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>max_tokens=3 正好对应 3 次 forward：1 次 prefill + 2 次 decode。</b>prefill 读完 prompt 的同时也生成了第 1 个输出 token，占用一个名额。</li>
+    <li><b>decode 就是 extend_len = 1 的 prefill。</b>代码里两者走同一套逻辑。prefill 一次算 10 个，所以首字延迟高；decode 每次只算 1 个，所以之后很快。</li>
+    <li><b>第 3 次生成的 token 仍然有效，会发给用户。</b><code>can_decode=False</code> 只表示不能再继续生成。</li>
+  </ul>
+  <div class="mine"><span class="eyebrow">我踩过的坑</span><span>把 <code>device_len</code> 和 <code>max_tokens</code> 搞混：<code>device_len</code> 是现在有多少，<code>max_device_len</code> 才和上限有关。<code>complete_one</code> 的第一行执行时 <code>device_len</code> 还没 +1，所以 prefill 后 <code>cached_len</code> 是 10 不是 0。</span></div>
+</section>
+
+<section>
+  <h2><span class="n">02</span>请求结束时发生什么</h2>
+  <div class="tldr"><strong>一句话</strong><span>归还座位（table slot），把 KV 交给前缀缓存保留着，留给以后开头相同的请求复用，而不是直接丢掉。</span></div>
+<pre><code># scheduler.py  _process_last_data
+finished = not req.can_decode
+if not req.sampling_params.ignore_eos:
+    finished |= next_token == self.eos_token_id      # 或者采到了结束符
+reply.append(DetokenizeMsg(uid=req.uid, next_token=next_token, finished=finished))
+if finished and req not in self.finished_reqs:
+    self.decode_manager.remove_req(req)
+    self._free_req_resources(req)
+
+def _free_req_resources(self, req):
+    self.table_manager.free(req.table_idx)              # ① 归还座位
+    self.cache_manager.cache_req(req, finished=True)    # ② KV 插进 radix 树</code></pre>
+  <ul>
+    <li><b>finished=True 一路传回去：</b>detokenizer 解码最后一个 token → API server 的 <code>wait_for_ack</code> 退出循环、删掉信箱和门铃 → 流式请求发 <code>data: [DONE]</code>。</li>
+    <li><b>KV 不是丢掉：</b>函数名是 <code>cache_req</code>。KV 进入 radix 树，显存不够时才淘汰；只有放不进树的零头会立刻释放。这就是 RadixAttention。</li>
+    <li><b>隐藏细节：</b>结束时 <code>cached_len = 12</code> 不是 13。最后生成的 token 从没被送进模型，没有 KV。</li>
+    <li><b>和 pin_memory 无关：</b>锁页内存是每个 batch 临时开的拷贝缓冲区，跟请求的生命周期没关系。</li>
+  </ul>
+  <h3>table_idx：请求的座位号</h3>
+<pre>engine/engine.py:69
+page_table = zeros((max_running_req + 1, max_seq_len))
+
+                 位置 0      位置 1      位置 2   ...
+table_idx = 0  [ KV 在哪  | KV 在哪  | ...        ]   ← 请求 A 占这一行
+table_idx = 1  [ KV 在哪  | KV 在哪  | ...        ]   ← 请求 B
+table_idx = 2  [ （空闲）                         ]</pre>
+  <ul>
+    <li><code>table_idx</code> 是行号；行里每一格才是那个 token 的 KV 在显存里的位置。</li>
+    <li><code>token_pool</code> 形状相同、行号相同，存的是 token id。</li>
+    <li><code>table.py</code> 只有 21 行：<code>_free_slots</code> 是空座位列表，<code>allocate()</code> 发座位，<code>free()</code> 收回。座位总数 = <code>max_running_req</code>，也就限制了最多同时跑几个请求。</li>
+  </ul>
+  <div class="analogy"><span class="eyebrow">比喻：餐厅桌号</span><span>请求进来分一张桌（table_idx），桌上的单子记着每道菜放在仓库哪个货架（page_table 那一行）。吃完桌子收回，但做好的菜（KV）先留在仓库里，说不定下一位点的一样。</span></div>
+</section>
+
+<section>
+  <h2><span class="n">03</span>DecodeManager（读到一半）</h2>
+  <div class="tldr"><strong>一句话</strong><span>手里拿着一个 <code>Req</code> 的集合 <code>running_reqs</code>，也就是所有处在 decode 阶段的请求，每轮把它们打包成一个 decode batch。</span></div>
+  <ul>
+    <li><code>running_reqs</code> 装的是 <code>Req</code> 对象，不是消息。<code>UserMsg</code> 在 scheduler 收到时就转成请求了。</li>
+    <li>prefill 做完之后，请求就进入 decode 阶段。第一个输出 token 是 prefill 生成的，不是 decode。</li>
+    <li><code>@dataclass(eq=False)</code> 让每个 <code>Req</code> 只和自己相等，所以能放进 set。</li>
+  </ul>
+<pre><code>self.running_reqs = {req for req in self.running_reqs.union(reqs) if req.can_decode}
+#                                   └──── ① 合并 ────┘        └── ② 筛选 ──┘</code></pre>
+  <div class="q"><span class="eyebrow">明天从这里继续</span>
+    <span>1. ① 把什么和什么合并？<code>scheduler.py</code> 的 <code>_forward</code> 里传进来的是刚跑完的那一批；如果那是 prefill 批次，经过 ① 会发生什么？</span>
+    <span>2. ② 留下谁、扔掉谁？没有 ② 的话，练习表里第 3 次 forward 后的请求下一轮会怎样？</span>
+    <span>3. 用一句大白话说：<code>filter_reqs</code> 每一轮在干什么？</span>
+    <span>4. <code>schedule_next_batch</code> 为什么按 <code>uid</code> 排序？（提示：commit「Stabilize decode batch request order across TP ranks」）</span>
+    <span>5. <code>inflight_tokens</code> 在算什么，给谁用？</span></div>
+</section>
+
+<section>
+  <h2><span class="n">04</span>模型是怎么「回答」的</h2>
+  <div class="tldr"><strong>一句话</strong><span>模型只会猜下一个字。回答就是让它一个字一个字接着写，每次猜出的字接到末尾，作为下一次的输入（自回归）。</span></div>
+  <p>你的问题会先被套上对话模板，变成 <code>&lt;用户&gt;中国的首都是哪？&lt;助手&gt;</code>。模型看到 <code>&lt;助手&gt;</code>，就以助手的身份续写。它不是在回答，而是在续写一段对话。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>轮次</th><th>送进模型的</th><th>模型看到的全部内容</th><th>猜出的下一个字</th></tr></thead>
+    <tbody>
+      <tr><td>1 · prefill</td><td>整个 prompt（10 个 token）</td><td><code>&lt;用户&gt;中国的首都是哪？&lt;助手&gt;</code></td><td>北</td></tr>
+      <tr><td>2 · decode</td><td>只有「北」</td><td><code>…&lt;助手&gt;北</code></td><td>京</td></tr>
+      <tr><td>3 · decode</td><td>只有「京」</td><td><code>…&lt;助手&gt;北京</code></td><td>。</td></tr>
+      <tr><td>4 · decode</td><td>只有「。」</td><td><code>…&lt;助手&gt;北京。</code></td><td>EOS → 停</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>为什么 decode 只送 1 个字也能看到前文：</b>前面字的 KV（笔记）已经存在显存里，只需给新字做笔记，再翻旧笔记。</li>
+    <li><b>你看到的只有「北京。」：</b>detokenizer 只把新生成的 token 转成文字（<code>incremental_output</code>），一点点流回来。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">05</span>token 在哪生成：四站</h2>
+<pre>input_ids ─▶ [Transformer 层] ─▶ [LM head：prefill 只取最后位置] ─▶ logits（词表打分）
+                                                                      │
+                                                              [Sampler：挑一个]
+                                                                      │
+                                                     next_token ─▶ append_host ─▶ detokenizer</pre>
+  <div class="tbl"><table>
+    <thead><tr><th>站</th><th>位置</th><th>做什么</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>models/llama.py:79</code></td><td>跑完所有层，<code>lm_head</code> 把结果变成词表上每个词的分数（logits）</td></tr>
+      <tr><td>2</td><td><code>layers/embedding.py</code> <code>ParallelLMHead.forward</code></td><td>prefill 时用 <code>get_last_indices</code> 只留每个请求最后一个位置。前面位置的预测没用，不浪费算力打分</td></tr>
+      <tr><td>3</td><td><code>engine/sample.py:71</code></td><td>greedy 直接 <code>argmax</code>；否则按 temperature / top_k / top_p 用 FlashInfer 随机采样</td></tr>
+      <tr><td>4</td><td><code>engine/engine.py:191</code></td><td><code>forward_batch</code> 串起前三站，<code>complete_one()</code>，结果异步拷回 CPU</td></tr>
+    </tbody>
+  </table></div>
+  <p>prefill 送进 10 个 token 却只出 1 个新 token，原因就在第 2 站：只有最后一个位置代表「prompt 之后的下一个字」。</p>
+</section>
+
+<section>
+  <h2><span class="n">06</span>Llama 是怎么接进 mini-sglang 的</h2>
+  <div class="tldr"><strong>一句话</strong><span>mini-sglang 没用 HuggingFace 的模型代码，而是自己重写了 Llama。只从 HF 拿 <code>config.json</code>、tokenizer 和 <code>.safetensors</code> 权重。</span></div>
+  <h3>启动时：搭模型（一次）</h3>
+<pre>server/launch.py        每张 GPU 一个 scheduler 进程
+  ▼
+scheduler.py            Scheduler.__init__ → Engine(config)
+  ▼
+engine/engine.py:47     with torch.device("meta"): self.model = create_model(...)
+  ▼
+models/__init__.py      create_model → get_model_class(architectures[0])   # 来自 config.json
+  ▼
+models/register.py      _MODEL_REGISTRY: "LlamaForCausalLM" → models/llama.py
+  ▼
+models/llama.py         embed_tokens → N × LlamaDecoderLayer → norm → lm_head
+  ▼
+engine/engine.py:49     load_state_dict(...)
+  ▼
+models/weight.py:75     读 *.safetensors，按 TP 切分，直接放上 GPU</pre>
+  <ul>
+    <li><b><code>torch.device("meta")</code>：</b>先在假设备上搭骨架，只记形状不分配内存，加载权重时直接放到 GPU。</li>
+    <li><b>注册表：</b>加一个新模型 = 写一个模型文件 + 在 <code>_MODEL_REGISTRY</code> 加一行。Qwen、Mistral 都是这样接进来的。</li>
+  </ul>
+  <h3>运行时：每一批</h3>
+<pre>scheduler.py   _forward
+  ▼
+engine.py:191  with self.ctx.forward_batch(batch):    # batch 放进全局 Context
+                   logits = self.model.forward()       # 没有传参数
+  ▼
+llama.py       LlamaForCausalLM.forward: input_ids = get_global_ctx().batch.input_ids
+  ▼
+llama.py       LlamaModel.forward: embed → 每层 layer.forward → norm
+  ▼
+llama.py       LlamaDecoderLayer: layernorm → self_attn → layernorm → mlp
+  ▼
+models/utils.py       RopeAttn：算 q/k/v
+  ▼
+layers/attention.py:47   rotary 位置编码 → ctx.attn_backend.forward(q, k, v, layer_id, batch)
+  ▼
+attention/fi.py | fa.py  新 k/v 写进 KV cache，读出全部历史做注意力</pre>
+  <h3>全局 Context</h3>
+  <p><code>self.model.forward()</code> 不传参数，模型自己去 <code>get_global_ctx()</code> 取 batch、positions、attn_backend、kv_cache。注意力层要的东西太多，全当参数传会让每层签名又长又乱；放进全局 Context，模型代码就和普通 Llama 实现差不多干净。代价是光看签名看不出依赖。</p>
+</section>
+
+<section>
+  <h2><span class="n">?</span>还没回答的问题</h2>
+  <div class="q"><span class="eyebrow">费曼检验</span>
+    <span>· 不用 prefill / decode / token 这些词，给不懂 AI 的朋友解释 ChatGPT 是怎么回答问题的。</span>
+    <span>· prefill 和 decode 生成 token 用的是同一条链，两者在这条链上唯一的区别是什么？</span>
+    <span>· 为什么 mini-sglang 要自己重写 Llama，而不用 HuggingFace 现成的？（提示：HF 的代码知道 page_table、分页 KV cache、多卡切分吗？）</span>
+    <span>· DecodeManager 的 5 个问题（见第 03 节）。</span>
+    <span>· 删掉 <code>wait_stream</code> 会出什么错？overlap 模式下 EOS 的请求会不会被错误放进下一批？（见 Overlap 笔记）</span></div>
+</section>
+</div>
+</body>
+</html>
