@@ -110,6 +110,8 @@ const LOG = [
   {date:"2026-11-11", items:["CUDA stream：scheduler stream vs engine stream","wait_stream（厨房比喻）"]},
   {date:"2026-11-12", items:["pin_memory、Event.synchronize，整理 Overlap 笔记","Req 练习表：cached_len / device_len / extend_len","请求结束：释放座位、KV 进 radix 树，table_idx 是什么","dataclass、__post_init__、Python 3.10 语法"]},
   {date:"2026-11-15", items:["API server：wait_for_ack、ZMQ vs RabbitMQ、asyncio 唤醒链、async 基础","开始用费曼学习法；DecodeManager、remain_len","模型怎么回答（自回归）、token 生成四站、Llama 怎么接进 mini-sglang"]},
+  {date:"2026-11-23", items:["定下终点：读 SGLang 本体、贡献代码；中间关卡是手写 mini-sglang","重写 PLAN.md：四个阶段、先懂再测","开始读 launch.py：world_size、rank"]},
+  {date:"2026-11-24", items:["replace 与 frozen dataclass","每张卡一个 scheduler 进程，_run_scheduler 四步","代码在 CPU、计算在 GPU；权重 / KV cache / token_pool 启动时就上 GPU","overlap 重叠的是 CPU 和 GPU","CUDA Graph：录的是什么、为什么 prefill 不行、pad 与 dummy_req"]},
 ];
 /* 一篇笔记可以覆盖好几天：parts 记录「哪天学的 → 笔记里哪一节」 */
 const NOTES = [
@@ -131,6 +133,14 @@ const NOTES = [
           {date:"2026-11-15", anchor:"#s06", label:"Llama 怎么接进来"}]},
   {href:"mini-sglang/async-and-messaging.html", title:"API Server 的异步与消息", sub:"ZMQ vs RabbitMQ · 收发室模式 · asyncio 唤醒链 · async 基础",
    parts:[{date:"2026-11-15", anchor:"", label:"全文"}]},
+  {href:"mini-sglang/launch-and-gpu.html", title:"启动与 GPU 分工", sub:"world_size 与 rank · replace/frozen · scheduler 进程 · CPU 与 GPU 分工 · overlap · CUDA Graph",
+   parts:[{date:"2026-11-23", anchor:"#s01", label:"world_size 与 rank"},
+          {date:"2026-11-24", anchor:"#s02", label:"replace 与 frozen"},
+          {date:"2026-11-24", anchor:"#s03", label:"scheduler 进程"},
+          {date:"2026-11-24", anchor:"#s04", label:"代码在 CPU"},
+          {date:"2026-11-24", anchor:"#s05", label:"什么在 GPU 上"},
+          {date:"2026-11-24", anchor:"#s06", label:"overlap"},
+          {date:"2026-11-24", anchor:"#s07", label:"CUDA Graph"}]},
 ];
 const noteDates = n => [...new Set(n.parts.map(p => p.date))].sort();
 
